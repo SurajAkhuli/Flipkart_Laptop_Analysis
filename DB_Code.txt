@@ -1,0 +1,158 @@
+-- Created the flipkart_products table
+CREATE TABLE flipkart_products (
+    product_id VARCHAR(20),
+    name VARCHAR(255),
+    brand_name VARCHAR(20),
+    processor_name VARCHAR(120),
+    RAM VARCHAR(120),
+    storage VARCHAR(20),
+    display VARCHAR(100),
+    gpu VARCHAR(100),
+    os VARCHAR(150),
+    warranty_year VARCHAR(100),
+    original_price VARCHAR(20),
+    mrp VARCHAR(20),
+    discount FLOAT,
+    rating FLOAT,
+    rating_count INT,
+    reviews_count INT,
+    flipkart_assured VARCHAR(10),
+    product_link VARCHAR(500),
+    image_url VARCHAR(500),
+    primary key(product_id)
+);
+
+
+-- Inserted data from flipkart_laptops_cleaned.csv
+INSERT INTO flipkart_products VALUES (...);
+
+
+-- Rename our table bcz its feels very long later we change it again 
+rename table flipkart_products to fp;
+
+-- Remove primary key from table because duplicates create error 
+alter table fp drop primary key;
+
+-- Now still my table have not null constraint in my product_id column i want to remove it also
+alter table fp modify column product_id varchar(20) null;
+
+-- Now i want to took head(5) top 5 data from my table 
+select *from fp limit 5;
+
+--Now i want to create table with first 10 records of my data so that i can perform my code as sample test
+create table sample as select *from fp limit 10;
+
+-- in 10 records we dont getting our desired sample or records so we took 100
+select id, product_id,row_number() over (partition by product_id order by id) as ranknum from (select *from fp limit 100) as temp;
+
+-- Create new table as to store Raw_data
+create table Raw_Data as select *from fp;
+
+-- Deleted all duplicate entries (keeping the first) based on product_id within the top 100 rows of the fp table using a ROW_NUMBER() window function.
+delete from fp where id in(
+select id from (
+select id, product_id,row_number() over (partition by product_id order by id) as ranknum from (select *from fp limit 100) as temp) as top100
+ where ranknum>1 );
+
+-- just checking how many records are there in my file
+select count(*)from fp;
+
+-- Selected top 5 records
+SELECT * FROM flipkart_products LIMIT 5;
+
+-- Deleted all duplicate product_id entries from the fp table, keeping only the first (lowest id) record for each.
+delete from fp where id in(
+select id from (
+select id, product_id,row_number() over (partition by product_id order by id) as ranknum from fp)
+as fulldata
+where ranknum>1);
+
+Query OK, 964 rows affected (0.033 sec)
+
+MariaDB [project]> select count(*) from fp;       -------->  1267
+
+-- backup of our removed duplicate data
+create table raw_data_removed_duplicates as select *from raw_data;
+
+-- transfer our whole data (table) from mysql to csv file
+SELECT *FROM fp
+INTO OUTFILE 'C:/Users/suraj/Desktop/Projects/removed_duplicates_file.csv'
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n';   
+
+-- STEP 1: Replace "NaN" with NULL
+update fp set original_price=NULL where original_price='nan';
+update fp set mrp=NULL where mrp='nan';
+-- STEP 2: Remove Symbols
+UPDATE fp SET original_price = REPLACE(REPLACE(original_price, '₹', ''), ',', '')
+WHERE original_price IS NOT NULL;
+update fp set mrp=replace(replace(mrp, '₹',''), ',', '') where mrp is not null;
+
+alter table fp modify original_price int;
+alter table fp modify mrp int;
+
+-- All values became 0 because the column still had text or symbols when I changed it to an integer. MySQL turned those invalid values into 0. Always clean the data first, then change the column type.
+
+-- drop the both column bcz all has been deleted from there & seted to 0 to all 
+alter table raw_data drop column original_price;
+alter table raw_data drop column mrp;
+
+-- now create another two column then i will took data from my another backup table 
+alter table raw_data add column original_price varchar(20) after warranty_year;
+alter table raw_data add column mrp varchar(20) before discount;
+# ERROR 1064 (42000): You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near 'before discount' at line 1
+alter table raw_data add column mrp varchar(20) after original_price;
+
+-- insert data from another table to my raw_data table
+insert into raw_data(original_price, mrp) select original_price, mrp from raw_data_removed_duplicates limit 5;
+unfortunately it add 5 new row in my table atlast area and set another all column value as null
+
+
+-- unfortunately now my data showing 2262 rows dont know from where data inserted
+-- try to see duplicate present or not 
+select product_id, temp.rank from(
+select product_id,id, row_number() over (partition by product_id order by id) as rank from raw_data) as temp
+where temp.rank>1;
+-- try to delete all duplicate datas
+ 
+delete from raw_data where id in(
+select id,product_id, temp.rank from(
+select product_id,id, row_number() over (partition by product_id order by id) as rank from raw_data) as temp
+where temp.rank>1) as tempp;
+-- this version wouldnt work bcz --> MySQL doesn’t allow multi-column SELECT (id,product_id, temp.rank) inside an IN clause. IN expects a single column (just ids), not multiple columns. The final alias (as tempp) after the delete subquery is NOT needed.
+
+-- final version to delete duplicate
+delete from raw_data where id in(
+select id from(
+select product_id,id, row_number() over (partition by product_id order by id) as rank from raw_data) as temp
+where temp.rank>1);
+
+
+MariaDB [project]> select count(*) from raw_Data;
++----------+
+| count(*) |
++----------+
+|     1267 |
++----------+
+1 row in set (0.002 sec)
+
+
+insert into raw_Data(original_price,mrp) select rd.original_price, rd.mrp 
+from raw_data_removed_duplicates as rd JOIN raw_data as r
+ON rd.product_id=r.product_id limit 5;
+
+
+
+update tablename set columnname=5 where condition
+
+update raw_data_removed_duplicates as rd JOIN raw_data as r
+set r.original_price=rd.original_price and r.mrp = rd.mrp
+where r.original_price is null or r.mrp is null;         
+# ## due to it took multiple at a time thatswhy upper query dont work 
+
+update raw_data_removed_duplicates as rd JOIN raw_data as r
+set r.original_price=rd.original_price;
+
+update raw_data_removed_duplicates as rd JOIN raw_data as r
+set r.mrp=rd.mrp where r.mrp is null;
